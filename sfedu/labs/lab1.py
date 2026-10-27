@@ -19,10 +19,7 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Задание 1.
-
-    ### Задание 1. Синтетический тест
-    ![alt](public/image_1.png)
+    ![alt](public/task1.png)
     """)
     return
 
@@ -51,7 +48,7 @@ def _(np, rng):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ![](public/image_3.png)
+    ![](public/task1_1.png)
     """)
     return
 
@@ -93,7 +90,7 @@ def _(mo, np, pd, plt, scipy, vectorize):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ![alt](public/image.png)
+    ![alt](public/task1_2.png)
     """)
     return
 
@@ -119,7 +116,7 @@ def _(cos, mo, normalize, np, plt, rng, scipy):
         ax.set_xlim(xlim)
         plt.show()
 
-        return mo.md(rf'Sw mean = {Sw.mean():.4f}, Sw var = {Sw.var():.4f}, $\sigma^2$ = {1 / 512:.5f}')
+        return mo.md(rf'Sw mean = {Sw.mean():.4f}, Sw var = {Sw.var():.4f}, $\sigma^2$ = {1 / 512:.5f}, kurtosis: {scipy.stats.kurtosis(Sw):.4f}')
 
 
     return (check_cone,)
