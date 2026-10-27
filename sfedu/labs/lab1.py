@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.25.2"
-app = marimo.App()
+app = marimo.App(auto_download=["ipynb"])
 
 
 @app.cell
@@ -45,7 +45,7 @@ def _(np, rng):
         S = cos(X_norm, Y_norm)
         return S
 
-    return (vectorize,)
+    return cos, normalize, vectorize
 
 
 @app.cell(hide_code=True)
@@ -60,19 +60,19 @@ def _(mo):
 def _(mo, np, pd, plt, scipy, vectorize):
     D = [16, 64, 256, 512, 4096]
     S = {}
-    fig, ax = plt.subplots(1, len(D), figsize=(12, 3))
-    for axes, d in zip(ax, D):
+    _fig, _ax = plt.subplots(1, len(D), figsize=(12, 3))
+    for axes, d in zip(_ax, D):
         s_d = vectorize(d)
         S[d] = s_d
 
-        x = np.linspace(-1, 1, 500)
-        density = scipy.stats.norm.pdf(x, scale=1/np.sqrt(d))
+        _x = np.linspace(-1, 1, 500)
+        _density = scipy.stats.norm.pdf(_x, scale=1/np.sqrt(d))
 
         axes.hist(s_d, bins=50, density=True)
-        axes.plot(x, density)
+        axes.plot(_x, _density)
         axes.set_title(f'd={d}')
 
-    fig.tight_layout()
+    _fig.tight_layout()
     plt.show()
 
     rows = []
@@ -87,6 +87,77 @@ def _(mo, np, pd, plt, scipy, vectorize):
 
     df = pd.DataFrame(rows).set_index('d')
     mo.md(df.to_markdown())
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ![alt](public/image.png)
+    """)
+    return
+
+
+@app.cell
+def _(cos, mo, normalize, np, plt, rng, scipy):
+    def check_cone(weights, xlim=[-0.25, 0.25]):
+        W = normalize(weights)
+        print(f'W shape = {W.shape}')
+        i, j = rng.integers(0, len(W), size=10_000), rng.integers(0, len(W), size=10_000)
+
+        Sw = cos(W[i], W[j])[i != j]
+        print(f'Sw shape = {Sw.shape}')
+
+        fig, ax = plt.subplots()
+
+        x = np.linspace(-1, 1, 512)
+        density = scipy.stats.norm.pdf(x, scale=1 / np.sqrt(512))
+
+        ax.hist(Sw, bins=50, density=True)
+        ax.plot(x, density)
+
+        ax.set_xlim(xlim)
+        plt.show()
+
+        return mo.md(rf'Sw mean = {Sw.mean():.4f}, Sw var = {Sw.var():.4f}, $\sigma^2$ = {1 / 512:.5f}')
+
+
+    return (check_cone,)
+
+
+@app.cell
+def _(check_cone):
+    from transformers import AutoModelForCausalLM
+
+    name = "EleutherAI/pythia-70m"
+
+    model = AutoModelForCausalLM.from_pretrained(name)
+
+    W_in = model.gpt_neox.embed_in.weight.detach().numpy()[:50277]
+
+    check_cone(W_in)
+    return (model,)
+
+
+@app.cell
+def _(check_cone, model):
+    W_out = model.embed_out.weight.detach().numpy()[:50277]
+    check_cone(W_out, xlim=[-0.25, 1])
+    return (W_out,)
+
+
+@app.cell
+def _(W_out, check_cone):
+    W_centred = W_out - W_out.mean(axis=0)
+    check_cone(W_centred, xlim=[-1,1])
+    return (W_centred,)
+
+
+@app.cell
+def _(W_centred, check_cone, np):
+    W_svd, _S, Vt = np.linalg.svd(W_centred, full_matrices=False)
+
+    check_cone(W_svd, xlim=[-1, 1])
     return
 
 
