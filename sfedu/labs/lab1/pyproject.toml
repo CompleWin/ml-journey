@@ -1,0 +1,27 @@
+[project]
+name = "sfedu-labs"
+version = "0.1.0"
+description = "SFEDU ML labs"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "marimo>=0.25.2",
+    "numpy>=2.4",
+    "pandas>=3.0",
+    "matplotlib>=3.10",
+    "scipy>=1.17",
+    "torch>=2.8",
+    "tabulate>=0.9",
+    "transformers>=4.57.6",
+]
+
+[tool.uv]
+package = false
+
+# CPU-сборка torch: без CUDA-колёс на ~2 ГБ, pythia-70m хватает CPU
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
