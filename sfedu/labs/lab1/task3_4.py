@@ -18,9 +18,10 @@ def _():
     from datasets import load_dataset
     import marimo as mo
     import torch.nn as nn
+    import pandas as pd
     import torch
 
-    return AutoModelForCausalLM, AutoTokenizer, load_dataset, mo, nn, torch
+    return AutoModelForCausalLM, AutoTokenizer, load_dataset, mo, nn, pd, torch
 
 
 @app.cell
@@ -49,7 +50,7 @@ def _(nn, torch):
             acts = self.encode(x)
             x_hat = self.decode(acts)
             return x_hat, acts
-    
+
 
     return (BrokenTopKSAE,)
 
@@ -86,9 +87,7 @@ def _(AutoModelForCausalLM, AutoTokenizer, load_dataset, torch):
 
     X = torch.cat(saved)[:, 1:].reshape(-1, 512)
     print(f'Активации: {X.shape}')
-    assert len(X) == len(ids) * 127
-    torch.save(X, "pythia_activations.pt")
-    return (X,)
+    return X, layer, model, tokenizer
 
 
 @app.cell(hide_code=True)
@@ -126,7 +125,6 @@ def _(BrokenTopKSAE, X, torch):
     broken = BrokenTopKSAE()
     ev_bad, dead_bad = train_sae(broken, X.float())
     print(f'Broken: Explained Variance = {ev_bad:.1%}, Dead Latents = {dead_bad:.1%}')
-        
     return (train_sae,)
 
 
@@ -136,13 +134,13 @@ def _(nn, torch):
         def __init__(self, x_mean, d_model=512, d_sae=2048, k=32):
             super().__init__()
             self.k = k
-        
+    
             W = torch.randn(d_sae, d_model)
             W = W / W.norm(dim=1, keepdim=True)
-        
+    
             self.W_enc = nn.Parameter(W.T.clone())
             self.b_enc = nn.Parameter(torch.zeros(d_sae))
-        
+    
             self.W_dec = nn.Parameter(W.clone())
             self.b_dec = nn.Parameter(x_mean.clone())
 
@@ -168,6 +166,160 @@ def _(FixedTopKSAE, X, train_sae):
     fixed = FixedTopKSAE(X.float().mean(dim=0))
     ev_good, dead_good = train_sae(fixed, X.float())
     print(f'Fixed: Explained Variance = {ev_good:.1%}, Dead Latents = {dead_good:.1%}')
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # Задание 4. Механистическая интерпретируемость: FeatureSteering против Neuron Steering
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ![alt](public/task4_1.png)
+    ![alt](public/task4_2.png)
+    """)
+    return
+
+
+@app.cell
+def _(layer, model, tokenizer, torch):
+    tokenizer.pad_token = tokenizer.eos_token
+
+    neutral_texts = [
+        "The cat slept near the window.",
+        "The train arrived at the station in the morning.",
+        "She opened a book and started reading.",
+        "It was a warm day in the quiet village.",
+        "They went to the market to buy vegetables.",
+        "He put the keys on the kitchen table.",
+        "The children played outside after school.",
+        "A small boat sailed slowly across the lake.",
+        "The teacher explained the lesson to the class.",
+        "We walked through the park before dinner.",
+        "The old house stood at the end of the road.",
+        "They finished their work and went home.",
+        "The weather changed during the afternoon.",
+        "She received a letter from her friend.",
+        "The shop was closed on Sunday.",
+        "A gentle breeze moved the leaves on the trees.",
+    ]
+    neutral = tokenizer(
+        neutral_texts, 
+        padding=True, 
+        return_tensors='pt'
+    )
+
+    layer_module = model.gpt_neox.layers[layer]
+
+    captured = []
+    def capture(module, inputs, output):
+        x = output[0] if isinstance(output, (tuple, list)) else output
+        captured.append(x.detach())
+
+    handle_capture = layer_module.register_forward_hook(capture)
+    try:
+        with torch.inference_mode():
+            model(**neutral, use_cache=False)
+    finally:
+        handle_capture.remove()
+
+    mask = neutral['attention_mask'].bool()
+    mean_norm = captured[0][mask].norm(dim=-1).mean().item()
+
+    levels = [0.1, 0.3, 0.5, 0.8, 1.0, 1.2, 1.5]
+    report_levels = [0.1, 0.8, 1.5]
+
+    print(f'Средняя L2-норма: {mean_norm:.4f}')
+    print(f'alpha: {[round(k * mean_norm, 3) for k in levels]}')
+    return layer_module, levels, mean_norm
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ![alt](public/task4_3.png)
+    """)
+    return
+
+
+@app.cell
+def _(layer_module, levels, mean_norm, mo, model, pd, tokenizer, torch):
+    def make_steering_hook(direction, alpha):
+        def change(module, inputs, output):
+            x = output[0] if isinstance(output, (tuple, list)) else output
+            direction_for_x = direction.to(device=x.device, dtype=x.dtype)
+            changed = x + alpha * direction_for_x
+
+            if isinstance(output, tuple):
+                return (changed,) + output[1:]
+            if isinstance(output, list):
+                return [changed] + output[1:]
+            return changed
+
+        return change
+
+    original_text = 'In the middle of the room there was a large table with'
+    prompt = tokenizer(
+        original_text,
+        return_tensors='pt'
+    )
+
+    def generate(direction, alpha):
+        handle = layer_module.register_forward_hook(make_steering_hook(direction, alpha))
+        try:
+            with torch.inference_mode():
+                result = model.generate(
+                    **prompt,
+                    max_new_tokens=25,
+                    do_sample=False,
+                    pad_token_id=tokenizer.eos_token_id
+                )
+        finally:
+            handle.remove()
+
+        start = prompt['input_ids'].shape[1]
+        return tokenizer.decode(result[0, start:], skip_special_tokens=True)
+
+    e = torch.zeros(512)
+    e[67] = 1.0
+
+    baseline = generate(e, 0.0)
+    neuron_texts = {k: generate(e, k * mean_norm) for k in levels}
+
+    rows = [
+        {
+            'Режим': 'Baseline',
+            'Уровень': '0',
+            r'$\alpha$': 0.0,
+            'Продолжение': baseline.replace('\n', ' ')
+        }
+    ]
+
+    for k, text in neuron_texts.items():
+        rows.append({
+            'Режим': 'Neuron Steering',
+            'Уровень': f'{k:.1f}',
+            r'$\alpha$': round(k * mean_norm, 2),
+            'Продолжение': text.replace('\n', ' ')
+        })
+
+    df = pd.DataFrame(rows)
+
+    print(original_text)
+    mo.md(df.to_markdown())
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ![alt](public/task4_4.png)
+    """)
     return
 
 
