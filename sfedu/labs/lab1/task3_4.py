@@ -382,8 +382,13 @@ def _(fixed, layer_module, mo, model, neutral_texts, pd, tokenizer, torch):
     with torch.inference_mode():
         f = fixed.encode(_captured[0][real].float())
 
-    check_tokens = [tokenizer.decode([t]) for t in check['input_ids'][real].tolist()]
-    target = torch.tensor([any(c in t for c in '([{') for t in check_tokens])
+    check_tokens = [
+        tokenizer.decode([t]) 
+        for t in check['input_ids'][real].tolist()
+    ]
+    target = torch.tensor([
+        any(c in t for c in '([{') for t in check_tokens
+    ])
 
     mean_target = f[target].mean(dim=0)
     zero_other = (f[~target] == 0).float().mean(dim=0)
@@ -528,7 +533,7 @@ def _(
 
     print(f'loss нейрон: {[round(l, 2) for l in neuron_loss]}')
     print(f'loss фича:   {[round(l, 2) for l in feature_loss]}')
-    print(f'Дисперсия активаций вдоль e_42: {(X.float() @ e).var():.2f}, вдоль v_SAE: {(X.float() @ v_sae).var():.2f}')
+    print(f'Дисперсия активаций вдоль e_{e_idx}: {(X.float() @ e).var():.2f}, вдоль v_SAE: {(X.float() @ v_sae).var():.2f}')
     return
 
 
