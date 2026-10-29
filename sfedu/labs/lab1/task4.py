@@ -24,13 +24,14 @@ def _(mo):
 @app.cell
 def _():
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    from datasets import load_dataset
     import matplotlib.pyplot as plt
     import marimo as mo
     import pandas as pd
     import torch.nn as nn
     import torch
 
-    return AutoModelForCausalLM, AutoTokenizer, mo, nn, pd, plt, torch
+    return AutoModelForCausalLM, AutoTokenizer, load_dataset, mo, nn, pd, plt, torch
 
 
 @app.cell(hide_code=True)
@@ -38,7 +39,7 @@ def _(mo):
     mo.md(r"""
     ## Подготовка (повтор из `task3_4.py`)
 
-    **Что делаем.** Загружаем Pythia-70m и активации слоя 3, которые `task3_4.py` сохранил в `pythia_activations.pt` (65 024 вектора по 512 чисел). Класс исправленного SAE и функцию обучения копируем из задания 3 без изменений и обучаем SAE заново — это около 15 секунд.
+    **Что делаем.** Загружаем Pythia-70m и заново собираем активации слоя 3 тем же кодом, что в `task3_4.py`: 512 текстов из pile-10k по 128 токенов, первый токен каждого выбрасываем, получается 65 024 вектора по 512 чисел. Класс исправленного SAE и функцию обучения копируем из задания 3 без изменений и обучаем SAE заново. Всё вместе — меньше минуты.
 
     **Зачем.** Переменные из другого файла сюда не попадают, а SAE нужен для экспериментов Б и В. `torch.manual_seed(69)` фиксирует случайность: при каждом запуске получается тот же SAE и тот же номер латента, поэтому выводы в тексте ниже совпадают с тем, что напечатает ноутбук.
     """)
@@ -46,19 +47,40 @@ def _(mo):
 
 
 @app.cell
-def _(AutoModelForCausalLM, AutoTokenizer, torch):
+def _(AutoModelForCausalLM, AutoTokenizer, load_dataset, torch):
     torch.set_num_threads(4)
 
     name = 'EleutherAI/pythia-70m'
     model = AutoModelForCausalLM.from_pretrained(name).eval()
     tokenizer = AutoTokenizer.from_pretrained(name)
-    tokenizer.pad_token = tokenizer.eos_token
+
+    texts = load_dataset('NeelNanda/pile-10k', split='train')['text'][:10000]
+    tokens = tokenizer(texts, truncation=True, max_length=128)['input_ids']
+    sequences = [t for t in tokens if len(t) == 128][:512]
+    ids = torch.tensor(sequences)
+
+    saved = []
+    def hook(module, inputs, outputs):
+        if isinstance(outputs, (tuple, list)):
+            outputs = outputs[0]
+
+        saved.append(outputs.detach().cpu())
 
     layer = 3
     layer_module = model.gpt_neox.layers[layer]
 
-    X = torch.load('pythia_activations.pt').float()
-    print(f'Активации из задания 3: {X.shape}')
+    handle = layer_module.register_forward_hook(hook)
+    try:
+        with torch.inference_mode():
+            for batch in ids.split(16):
+                model.gpt_neox(batch, use_cache=False)
+    finally:
+        handle.remove()
+
+    X = torch.cat(saved)[:, 1:].reshape(-1, 512).float()
+    print(f'Активации: {X.shape}')
+
+    tokenizer.pad_token = tokenizer.eos_token
     return X, layer_module, model, tokenizer
 
 
@@ -290,14 +312,14 @@ def _(layer_output, neutral_texts, sae, tokenizer, torch):
     with torch.inference_mode():
         f = sae.encode(layer_output(check)[real].float())
 
-    tokens = [tokenizer.decode([t]) for t in check['input_ids'][real].tolist()]
-    target = torch.tensor([any(c in t for c in '([{') for t in tokens])
+    check_tokens = [tokenizer.decode([t]) for t in check['input_ids'][real].tolist()]
+    target = torch.tensor([any(c in t for c in '([{') for t in check_tokens])
 
     mean_target = f[target].mean(dim=0)
     zero_other = (f[~target] == 0).float().mean(dim=0)
     j = torch.where(zero_other >= 0.99, mean_target, -1.0).argmax().item()
 
-    print(f'Токенов: {len(tokens)}, целевых (открывающие скобки): {target.sum().item()}, остальных: {(~target).sum().item()}')
+    print(f'Токенов: {len(check_tokens)}, целевых (открывающие скобки): {target.sum().item()}, остальных: {(~target).sum().item()}')
     print(f'Латентов, которые молчат на >= 99% остальных токенов: {(zero_other >= 0.99).sum().item()} из 2048')
     print(f'Выбран латент j = {j}: E[f_j] на скобках = {mean_target[j]:.2f}, на остальных = {f[~target, j].mean():.2f}, нулей на остальных = {zero_other[j]:.1%}')
     return check, f, j, real

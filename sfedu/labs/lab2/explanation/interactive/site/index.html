@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Спектральная теория случайных матриц</title>
+<link rel="stylesheet" href="player.css">
+</head>
+<body>
+<header id="top"><button id="bToc" aria-label="Оглавление (O)" hidden>☰</button><span id="chapter"></span><span id="section"></span><span id="counter"></span></header>
+<main id="stage" aria-live="polite"></main>
+<div id="flash" hidden aria-hidden="true"></div>
+<div id="captions" hidden></div>
+<nav id="bar">
+  <button id="bPrev" aria-label="Previous step (←)">⏮</button>
+  <button id="bPlay" aria-label="Play or pause (Space)">▶</button>
+  <button id="bNext" aria-label="Next step (→)">⏭</button>
+  <div id="segs"></div>
+  <span id="vol">
+    <button id="bMute" aria-label="Sound on or off (M)" aria-pressed="false">🔊</button>
+    <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume (↑ ↓)">
+  </span>
+  <button id="bSpeed" aria-label="Speed (, .)">1×</button>
+  <button id="bCC" aria-label="Captions (C)" aria-pressed="true">CC</button>
+</nav>
+<div id="soundNote" hidden>Звук не воспроизводится: шаги идут без него</div>
+<div id="cover">
+  <div class="sheet">
+    <div id="coverKind">Лабораторная работа</div>
+    <h1 id="coverTitle">Спектральная теория случайных матриц</h1>
+    <p id="coverSub">Лабораторная № 2 — разбор для защиты</p>
+    <ol id="toc" hidden></ol>
+    <div class="buttons">
+      <button id="bContinue" hidden>▶ Продолжить</button>
+      <button id="bStart">▶ Начать</button>
+    </div>
+    <p id="coverKeys">Пробел или щелчок по картинке — пауза, ← → — шаги, C — субтитры</p>
+  </div>
+</div>
+<div id="end" hidden>
+  <div class="sheet">
+    <h2 id="endTitle">Тема пройдена</h2>
+    <p id="endScore"></p>
+    <div class="buttons">
+      <button id="bNextChapter" hidden>Следующая глава →</button>
+      <button id="bContents" hidden>Оглавление</button>
+      <button id="bAgain">Ещё раз</button>
+    </div>
+  </div>
+</div>
+<script src="scenario.js"></script>
+<script src="player.js"></script>
+<script src="lib/mathjax.js"></script>
+</body>
+</html>

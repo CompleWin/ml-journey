@@ -1,0 +1,27 @@
+[project]
+name = "sfedu-lab2"
+version = "0.1.0"
+description = "SFEDU ML lab 2"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "jupyterlab>=4.6.4",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "pandas>=3.1.0",
+    "scipy>=1.18.1",
+    "torch>=2.15.0",
+    "torchvision>=0.29.1",
+]
+
+[tool.uv]
+package = false
+
+# CPU-сборка torch: без CUDA-колёс на ~2 ГБ, ResNet-18 хватает CPU
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
