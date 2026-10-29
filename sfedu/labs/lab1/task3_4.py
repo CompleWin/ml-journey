@@ -19,9 +19,19 @@ def _():
     import marimo as mo
     import torch.nn as nn
     import pandas as pd
+    import matplotlib.pyplot as plt
     import torch
 
-    return AutoModelForCausalLM, AutoTokenizer, load_dataset, mo, nn, pd, torch
+    return (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        load_dataset,
+        mo,
+        nn,
+        pd,
+        plt,
+        torch,
+    )
 
 
 @app.cell
@@ -134,13 +144,13 @@ def _(nn, torch):
         def __init__(self, x_mean, d_model=512, d_sae=2048, k=32):
             super().__init__()
             self.k = k
-    
+
             W = torch.randn(d_sae, d_model)
             W = W / W.norm(dim=1, keepdim=True)
-    
+
             self.W_enc = nn.Parameter(W.T.clone())
             self.b_enc = nn.Parameter(torch.zeros(d_sae))
-    
+
             self.W_dec = nn.Parameter(W.clone())
             self.b_dec = nn.Parameter(x_mean.clone())
 
@@ -166,7 +176,7 @@ def _(FixedTopKSAE, X, train_sae):
     fixed = FixedTopKSAE(X.float().mean(dim=0))
     ev_good, dead_good = train_sae(fixed, X.float())
     print(f'Fixed: Explained Variance = {ev_good:.1%}, Dead Latents = {dead_good:.1%}')
-    return
+    return (fixed,)
 
 
 @app.cell(hide_code=True)
@@ -236,7 +246,14 @@ def _(layer, model, tokenizer, torch):
 
     print(f'Средняя L2-норма: {mean_norm:.4f}')
     print(f'alpha: {[round(k * mean_norm, 3) for k in levels]}')
-    return layer_module, levels, mean_norm
+    return (
+        layer_module,
+        levels,
+        mean_norm,
+        neutral,
+        neutral_texts,
+        report_levels,
+    )
 
 
 @app.cell(hide_code=True)
@@ -286,7 +303,8 @@ def _(layer_module, levels, mean_norm, mo, model, pd, tokenizer, torch):
         return tokenizer.decode(result[0, start:], skip_special_tokens=True)
 
     e = torch.zeros(512)
-    e[67] = 1.0
+    e_idx = 67
+    e[e_idx] = 1.0
 
     baseline = generate(e, 0.0)
     neuron_texts = {k: generate(e, k * mean_norm) for k in levels}
@@ -312,7 +330,7 @@ def _(layer_module, levels, mean_norm, mo, model, pd, tokenizer, torch):
 
     print(original_text)
     mo.md(df.to_markdown())
-    return
+    return e, e_idx, generate, make_steering_hook
 
 
 @app.cell(hide_code=True)
@@ -320,6 +338,215 @@ def _(mo):
     mo.md(r"""
     ![alt](public/task4_4.png)
     """)
+    return
+
+
+@app.cell
+def _(fixed, layer_module, mo, model, neutral_texts, pd, tokenizer, torch):
+    bracket_texts = [
+        "The result (see Table 2) was better than expected.",
+        "The meeting (which lasted three hours) ended at noon.",
+        "She bought apples (red and green) at the market.",
+        "Most students (about 80 percent) passed the exam.",
+        "The museum (opened in 1920) is free on Mondays.",
+        "Our team (five people in total) finished the project early.",
+        "The function print(x) writes the value to the screen.",
+        "if (a > b) { return a; } else { return b; }",
+        "for (int i = 0; i < n; i++) { sum += arr[i]; }",
+        "Let f(x) = (x + 1) * (x - 1) for all real x.",
+        "data = {'name': 'Alice', 'age': 30}",
+        "values = [1, 2, 3, 4, 5]",
+        "matrix[i][j] = matrix[j][i] + 1",
+        "def add(a, b): return (a + b)",
+    ]
+    check = tokenizer(
+        bracket_texts + neutral_texts,
+        padding=True,
+        return_tensors='pt'
+    )
+
+    _captured = []
+    def _capture(module, inputs, output):
+        x = output[0] if isinstance(output, (tuple, list)) else output
+        _captured.append(x.detach())
+
+    _handle = layer_module.register_forward_hook(_capture)
+    try:
+        with torch.inference_mode():
+            model(**check, use_cache=False)
+    finally:
+        _handle.remove()
+
+    real = check['attention_mask'].bool()
+    real[:, 0] = False
+    with torch.inference_mode():
+        f = fixed.encode(_captured[0][real].float())
+
+    check_tokens = [tokenizer.decode([t]) for t in check['input_ids'][real].tolist()]
+    target = torch.tensor([any(c in t for c in '([{') for t in check_tokens])
+
+    mean_target = f[target].mean(dim=0)
+    zero_other = (f[~target] == 0).float().mean(dim=0)
+    j = torch.where(zero_other >= 0.99, mean_target, -1.0).argmax().item()
+
+    print(f'Токенов: {len(check_tokens)}, целевых (открывающие скобки): {target.sum().item()}, остальных: {(~target).sum().item()}')
+    print(f'Латентов, которые молчат на >= 99% остальных токенов: {(zero_other >= 0.99).sum().item()} из 2048')
+    print(f'Выбран латент j = {j}: E[f_j] на скобках = {mean_target[j]:.2f}, на остальных = {f[~target, j].mean():.2f}, нулей на остальных = {zero_other[j]:.1%}')
+
+    _where = real.nonzero()
+    _rows = []
+    for _value, _i in zip(*f[:, j].topk(5)):
+        _s, _p = _where[_i].tolist()
+        _ids = check['input_ids'][_s]
+        _token = tokenizer.decode(_ids[_p:_p + 1])
+        _rows.append({
+            '$f_j$': f'{_value:.2f}',
+            'токен': f'`{_token}`',
+            'контекст': tokenizer.decode(_ids[:_p]) + f'<mark>{_token}</mark>' + tokenizer.decode(_ids[_p + 1:], skip_special_tokens=True),
+        })
+    mo.md(pd.DataFrame(_rows).to_markdown(index=False))
+    return (j,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ![alt](public/task4_5.png)
+    """)
+    return
+
+
+@app.cell
+def _(fixed, generate, j, levels, mean_norm, mo, pd):
+    v_sae = (fixed.W_dec[j] / fixed.W_dec[j].norm()).detach()
+
+    _baseline = generate(v_sae, 0.0)
+    feature_texts = {k: generate(v_sae, k * mean_norm) for k in levels}
+
+    _rows = [
+        {
+            'Режим': 'Baseline',
+            'Уровень': '0',
+            r'$\alpha$': 0.0,
+            'Продолжение': _baseline.replace('\n', ' ')
+        }
+    ]
+
+    for _k, _text in feature_texts.items():
+        _rows.append({
+            'Режим': 'Feature Steering',
+            'Уровень': f'{_k:.1f}',
+            r'$\alpha$': round(_k * mean_norm, 2),
+            'Продолжение': _text.replace('\n', ' ')
+        })
+
+    mo.md(pd.DataFrame(_rows).to_markdown())
+    return (v_sae,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # Контрольные задания и отчетность
+    ![alt](public/task4_6.png)
+    """)
+    return
+
+
+@app.cell
+def _(e, generate, mean_norm, mo, pd, report_levels, v_sae):
+    _strength = dict(zip(report_levels, ['слабое', 'среднее', 'сильное']))
+
+    _rows = [
+        {
+            'Режим': 'Baseline',
+            'Уровень': '0',
+            r'$\alpha$': 0.0,
+            'Продолжение': generate(e, 0.0).replace('\n', ' ')
+        }
+    ]
+
+    for _mode, _direction in [('Neuron Steering', e), ('Feature Steering', v_sae)]:
+        for _k in report_levels:
+            _rows.append({
+                'Режим': _mode,
+                'Уровень': f'{_k:.1f} ({_strength[_k]})',
+                r'$\alpha$': round(_k * mean_norm, 2),
+                'Продолжение': generate(_direction, _k * mean_norm).replace('\n', ' ')
+            })
+
+    mo.md(pd.DataFrame(_rows).to_markdown())
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ![alt](public/task4_7.png)
+    """)
+    return
+
+
+@app.cell
+def _(
+    X,
+    e,
+    e_idx,
+    j,
+    layer_module,
+    levels,
+    make_steering_hook,
+    mean_norm,
+    model,
+    neutral,
+    plt,
+    torch,
+    v_sae,
+):
+    labels = neutral['input_ids'].masked_fill(neutral['attention_mask'] == 0, -100)
+
+    def lm_loss(direction, alpha):
+        handle = layer_module.register_forward_hook(make_steering_hook(direction, alpha))
+        try:
+            with torch.inference_mode():
+                loss = model(**neutral, labels=labels, use_cache=False).loss
+        finally:
+            handle.remove()
+        return loss.item()
+
+    grid = [0.0] + levels
+    neuron_loss = [lm_loss(e, k * mean_norm) for k in grid]
+    feature_loss = [lm_loss(v_sae, k * mean_norm) for k in grid]
+
+    _fig, _ax = plt.subplots()
+    _ax.plot(grid, neuron_loss, marker='o', label=f'нейрон $e_{e_idx}$')
+    _ax.plot(grid, feature_loss, marker='s', label=f'фича SAE $j = {j}$')
+    _ax.set_xlabel(r'$\alpha \;/\; \mathbb{E}\|x\|_2$')
+    _ax.set_ylabel('Cross-Entropy на нейтральных текстах')
+    _ax.legend()
+    plt.show()
+
+    print(f'loss нейрон: {[round(l, 2) for l in neuron_loss]}')
+    print(f'loss фича:   {[round(l, 2) for l in feature_loss]}')
+    print(f'Дисперсия активаций вдоль e_42: {(X.float() @ e).var():.2f}, вдоль v_SAE: {(X.float() @ v_sae).var():.2f}')
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ![alt](public/task4_8.png)
+    """)
+    return
+
+
+@app.cell
+def _(generate, mean_norm, mo, pd, v_sae):
+    _rows = []
+    for _k in [0.10, 0.12, 0.14, 0.16, 0.18, 0.20, 0.22, 0.24, 0.26, 0.28, 0.30]:
+        _text = generate(v_sae, _k * mean_norm).replace('\n', ' ')
+        _rows.append({r'$\alpha / \mathbb{E}\lVert x \rVert_2$': _k, r'$\alpha$': round(_k * mean_norm, 1), 'продолжение промпта': _text})
+    mo.md(pd.DataFrame(_rows).to_markdown(index=False))
     return
 
 
