@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.25.2"
-app = marimo.App(width="medium")
+app = marimo.App(width="medium", auto_download=["ipynb"])
 
 
 @app.cell
@@ -53,13 +53,13 @@ def _(np):
         w = np.array([-16, -4, 9]) # задайте самостоятельно (параметры модели: w0, w1, w2 - ориентация разделяющей линии)
         x_test = np.array([[-5, 2], [-4, 6], [3, 2], [3, -3], [5, 6], [9, 2]]) # задайте самостоятельно (признаки образов: x0, x1, x2)
         y_test = np.array([1, 1, 1, -1, -1, -1]) # задайте самостоятельно (метки класса)
-    
+
         def margins(x, y):
             return (w[1] * x[0] + w[2] * x[1] + w[0]) * y 
 
         margin = np.array([margins(xi, yi) for xi, yi in zip(x_test, y_test)])
         print(margin)
-    
+
     task4()
     return
 
@@ -85,7 +85,7 @@ def _(np):
         margins = np.array([margin(xi, yi) for xi, yi in zip(x_test, y_test)])
         Q = np.sum(margins < 0)
         print(Q)
-    
+
     task5()
     return
 
