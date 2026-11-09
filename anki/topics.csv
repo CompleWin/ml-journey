@@ -1,0 +1,8 @@
+source,deck_dir,deck,date,cards
+self-edu/ml/stepik/03-least-squares-method,legacy,ML Балакирев::03 Метод наименьших квадратов,2026-11-08,
+self-edu/ml/stepik/04-linear-models-and-overfitting,legacy,ML Балакирев::04 Линейная модель и переобучение,2026-11-07,
+self-edu/ml/stepik/05-overfitting-assessment-methods,legacy,ML Балакирев::05 Оценка переобучения,2026-11-07,
+self-edu/ml/stepik/06-equation-of-a-hyperplane-in-binary-classification,legacy,ML Балакирев::06 Гиперплоскость и бинарная классификация,2026-11-07,
+self-edu/ml/stepik/07-solve-simple-binary-classifiaction,legacy,ML Балакирев::07 Отступ и простой классификатор,2026-11-07,
+self-edu/ml/stepik/08-loss-function-for-linear-binary-classification,legacy,ML Балакирев::08 Функции потерь,2026-11-07,
+self-edu/ml/stepik/09-gradient-descent-algorithm,legacy,ML Балакирев::09 Градиентный спуск,2026-11-07,
