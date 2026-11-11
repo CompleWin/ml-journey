@@ -2,7 +2,7 @@
 
 В figures.py темы:
     import sys; from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
     from figstyle import new, save, C
 
     fig, ax = new()

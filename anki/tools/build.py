@@ -1,15 +1,15 @@
 """Собирает колоды Anki из папок тем в anki/decks/.
 
 Каждая тема лежит в своей папке: anki/decks/<источник>/<тема>/
-    cards.txt     карточки (формат описан в anki/CLAUDE.md)
+    cards.txt     карточки (формат описан в docs/ANKI.md)
     figures.py    скрипт картинок (необязательно)
     media/        картинки
 На выходе в той же папке появляется <тема>.apkg: его и импортируют в Anki.
 Картинки, тип заметки и стили едут внутри .apkg.
 
 Запуск из корня репозитория:
-    uv run --no-project --with genanki python anki/build.py anki/decks/stepik/10-sgd
-    uv run --no-project --with genanki python anki/build.py            # все темы
+    uv run --no-project --with genanki python anki/tools/build.py anki/decks/stepik/10-sgd
+    uv run --no-project --with genanki python anki/tools/build.py            # все темы
     ... build.py <папка темы> --preview   # ещё и preview.html для проверки в браузере
 
 GUID заметки = соль + путь папки темы + ID карточки. Поэтому папку темы
@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DECKS = HERE / "decks"
+ROOT = HERE.parents[1]
+DECKS = HERE.parent / "decks"
 
 ROOT_DECK = "ML Journey"
 MODEL_ID = 1762604917
@@ -440,9 +441,9 @@ def main():
         for card in topic.cards:
             counts[card.type] = counts.get(card.type, 0) + 1
         print(f"[{topic.key}] карточек: {len(topic.cards)} {counts}")
-        print(f"  -> {output.relative_to(HERE.parent)}")
+        print(f"  -> {output.relative_to(ROOT)}")
         if want_preview:
-            print(f"  -> {preview(topic).relative_to(HERE.parent)}")
+            print(f"  -> {preview(topic).relative_to(ROOT)}")
     sys.exit(1 if failed else 0)
 
 
