@@ -1,0 +1,1 @@
+[Прототип здесь](https://github.com/CompleWin/dust-cleaning-sim-prototype)
