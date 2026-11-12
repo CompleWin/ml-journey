@@ -30,30 +30,22 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 DECKS = HERE.parent / "decks"
 
-ROOT_DECK = "ML Journey"
-MODEL_ID = 1762604917
-MODEL_NAME = "ML Journey: вопрос и ответ"
+# DECK в cards.txt и есть полное имя колоды в Anki, общего корня нет.
+MODEL_ID = 1763000000
+MODEL_NAME = "Вопрос и ответ (конспекты)"
+# Соль GUID не менять: по ней Anki узнаёт уже импортированные карточки.
 GUID_SALT = "ml-journey"
 
-TYPES = {
-    "definition": "определение",
-    "intuition": "интуиция",
-    "calculation": "вычисление",
-    "comparison": "сравнение",
-    "application": "применение",
-    "misconception": "найди ошибку",
-}
-
 HEADER_RE = re.compile(r"^(DECK|SOURCE|TAGS):\s*(.*)$")
-KEY_RE = re.compile(r"^(ID|TYPE|Q|QIMG|A|E|IMG|SRC):\s?(.*)$")
+KEY_RE = re.compile(r"^(ID|Q|QIMG|A|IMG|SRC):\s?(.*)$")
+OLD_KEY_RE = re.compile(r"^(TYPE|E):")
 MATH_RE = re.compile(r"\$\$(.+?)\$\$|\$(.+?)\$")
-TEXT_KEYS = ("Q", "A", "E")
+TEXT_KEYS = ("Q", "A")
 
-FIELDS = ["Вопрос", "КартинкаВопрос", "Ответ", "Пояснение", "Картинка",
-          "Тема", "Раздел", "Тип", "ID"]
+FIELDS = ["Вопрос", "КартинкаВопрос", "Ответ", "Картинка", "Раздел", "ID"]
 
-# Дизайн взят из английской колоды (Cloze EN Helper): та же типографика,
-# серые подписи блоков, синий акцент, плашка-чип и ночная тема.
+# Одна сторона вопрос, другая ответ. Типографика и ночная тема
+# из английской колоды (Cloze EN Helper), синий акцент на главном.
 CSS = """.card { text-align: left; }
 
 .mc {
@@ -65,25 +57,11 @@ CSS = """.card { text-align: left; }
   margin: 0 auto;
   padding: 8px 16px;
 }
-.mc .meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.mc .topic { font-size: 14px; color: #9a9a9a; }
-.mc .chip { font-size: 13px; color: #555; background: #f0f0ee; border-radius: 6px; padding: 1px 8px; }
-.mc .chip-definition::after { content: "определение"; }
-.mc .chip-intuition::after { content: "интуиция"; }
-.mc .chip-calculation::after { content: "вычисление"; }
-.mc .chip-comparison::after { content: "сравнение"; }
-.mc .chip-application::after { content: "применение"; }
-.mc .chip-misconception::after { content: "найди ошибку"; }
-.mc .chip-calculation { color: #1565c0; background: #e8f0fb; }
-.mc .chip-misconception { color: #b3261e; background: #fbeaea; }
 .mc .question { font-size: 23px; font-weight: 600; }
 .mc hr { border: none; border-top: 1px solid #e3e3e3; margin: 18px 0; }
 .mc .answer { font-size: 21px; }
 .mc .answer b { color: #1565c0; }
 
-.mc .block { margin-top: 14px; }
-.mc .label { font-size: 14px; color: #9a9a9a; margin-bottom: 2px; }
-.mc .value { font-size: 18px; color: #444; }
 .mc .section { margin-top: 16px; font-size: 13px; color: #b5b5b5; }
 
 .mc .image { margin-top: 14px; }
@@ -113,12 +91,6 @@ b { font-weight: 600; }
 /* Тёмная тема Anki */
 .nightMode .mc, .night_mode .mc { color: #e0e0e0; }
 .nightMode .mc .answer b, .night_mode .mc .answer b { color: #6db3f2; }
-.nightMode .mc .chip, .night_mode .mc .chip { color: #cfcfcf; background: #3a3a3a; }
-.nightMode .mc .chip-calculation, .night_mode .mc .chip-calculation { color: #6db3f2; background: #24384f; }
-.nightMode .mc .chip-misconception, .night_mode .mc .chip-misconception { color: #ef9a9a; background: #4a2a2a; }
-.nightMode .mc .value, .night_mode .mc .value { color: #c4c4c4; }
-.nightMode .mc .topic, .night_mode .mc .topic,
-.nightMode .mc .label, .night_mode .mc .label { color: #8a8a8a; }
 .nightMode .mc .section, .night_mode .mc .section { color: #6a6a6a; }
 .nightMode .mc hr, .night_mode .mc hr { border-color: #4a4a4a; }
 .nightMode .mc code, .night_mode .mc code { background: #33363b; }
@@ -126,10 +98,6 @@ b { font-weight: 600; }
 """
 
 FRONT = """<div class="mc">
-  <div class="meta">
-    <span class="topic">{{Тема}}</span>
-    {{#Тип}}<span class="chip chip-{{Тип}}"></span>{{/Тип}}
-  </div>
   <div class="question">{{Вопрос}}</div>
   {{#КартинкаВопрос}}<div class="image">{{КартинкаВопрос}}</div>{{/КартинкаВопрос}}
 </div>"""
@@ -139,7 +107,6 @@ BACK = """{{FrontSide}}
   <hr id="answer">
   <div class="answer">{{Ответ}}</div>
   {{#Картинка}}<div class="image">{{Картинка}}</div>{{/Картинка}}
-  {{#Пояснение}}<div class="block"><div class="label">пояснение</div><div class="value">{{Пояснение}}</div></div>{{/Пояснение}}
   {{#Раздел}}<div class="section">{{Раздел}}</div>{{/Раздел}}
 </div>"""
 
@@ -147,11 +114,9 @@ BACK = """{{FrontSide}}
 @dataclass
 class Card:
     id: str
-    type: str = ""
     q: str = ""
     qimg: str = ""
     a: str = ""
-    e: str = ""
     img: str = ""
     src: str = ""
 
@@ -200,6 +165,9 @@ def parse(folder):
                 else:
                     setattr(topic, name.lower(), value.strip())
                 continue
+        if OLD_KEY_RE.match(line):
+            raise SystemExit(f"{folder}: поля TYPE и E больше нет, "
+                             f"пояснение пиши в ответ A: {line[:40]}")
         match = KEY_RE.match(line)
         if match:
             key, value = match.groups()
@@ -300,8 +268,6 @@ def validate(topic):
         seen.add(card.id)
         if not card.q.strip() or not card.a.strip():
             errors.append(f"{where}: нет вопроса или ответа")
-        if card.type not in TYPES:
-            errors.append(f"{where}: TYPE должен быть одним из {', '.join(TYPES)}")
         for name in ("qimg", "img"):
             path = getattr(card, name)
             if path and not (topic.folder / path).is_file():
@@ -333,13 +299,11 @@ def notes(topic, media_dir):
         media.append(str(dst))
         return f'<img src="{name}">'
 
-    title = topic.deck.split("::")[-1].strip()
     for card in topic.cards:
         rows.append(dict(
-            fields=[render(card.q), picture(card.qimg), render(card.a), render(card.e),
-                    picture(card.img), html.escape(title), html.escape(card.src),
-                    card.type, card.id],
-            tags=topic.tags + [f"type::{card.type}"],
+            fields=[render(card.q), picture(card.qimg), render(card.a),
+                    picture(card.img), html.escape(card.src), card.id],
+            tags=topic.tags,
             guid_parts=(GUID_SALT, topic.key, card.id),
         ))
     return rows, media
@@ -355,8 +319,7 @@ def build(topic):
         css=CSS,
         sort_field_index=0,
     )
-    deck_name = f"{ROOT_DECK}::{topic.deck}"
-    deck = genanki.Deck(deck_id(deck_name), deck_name)
+    deck = genanki.Deck(deck_id(topic.deck), topic.deck)
     output = topic.folder / f"{topic.folder.name}.apkg"
     with tempfile.TemporaryDirectory() as tmp:
         rows, media = notes(topic, Path(tmp))
@@ -437,10 +400,7 @@ def main():
             print(f"[{topic.key}] ошибки:\n  " + "\n  ".join(errors))
             continue
         output = build(topic)
-        counts = {}
-        for card in topic.cards:
-            counts[card.type] = counts.get(card.type, 0) + 1
-        print(f"[{topic.key}] карточек: {len(topic.cards)} {counts}")
+        print(f"[{topic.key}] {topic.deck}: карточек {len(topic.cards)}")
         print(f"  -> {output.relative_to(ROOT)}")
         if want_preview:
             print(f"  -> {preview(topic).relative_to(ROOT)}")
